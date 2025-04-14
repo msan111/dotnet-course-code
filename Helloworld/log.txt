@@ -1,0 +1,17 @@
+INSERT INTO TutorialAppSchema.Computer (
+    Motherboard, 
+    CPUCores,
+    HasWifi,
+    HasLTE, 
+    ReleaseDate, 
+    Price, 
+    VideoCard
+    ) VALUES (
+    @Motherboard, 
+    @CPUCores, 
+    @HasWifi, 
+    @HasLTE, 
+    @ReleaseDate, 
+    @Price, 
+    @VideoCard
+    )
