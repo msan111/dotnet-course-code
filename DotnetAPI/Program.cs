@@ -1,3 +1,5 @@
+using DotnetAPI.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -25,6 +27,7 @@ builder.Services.AddCors((options) =>
                     .AllowCredentials();
             });
     });
+builder.Services.AddScoped<IUserRepository, UserRepository>();
  
 var app = builder.Build();
  
@@ -41,24 +44,6 @@ else
     app.UseHttpsRedirection();
 }       
 
-
-// var app = builder.Build();
-
-// // Configure the HTTP request pipeline.
-// if (app.Environment.IsDevelopment())
-// {
-//     //app.MapOpenApi();
-//     app.UseSwagger();
-//     app.UseSwaggerUI();
-// }
-// else
-// {
-//     app.UseHttpsRedirection();
-// }
-
 app.MapControllers();
-
-
-
 
 app.Run();
