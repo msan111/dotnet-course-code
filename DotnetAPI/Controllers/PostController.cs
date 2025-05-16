@@ -17,48 +17,32 @@ namespace DotnetAPI.Controllers
             _dapper = new DataContextDapper(config);
         }
 
-        [HttpGet("Posts")]
-        public IEnumerable<Post> GetPosts()
+
+        [HttpGet("Posts/{postId}/{userId}/{searchParam}")]
+        public IEnumerable<Post> GetPosts(int postId = 0, int userId = 0, string searchParam = "None")
         {
-            string sql = @"SELECT [PostId],
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated] 
-                FROM TutorialAppSchema.Posts";
+            string sql = @"EXEC TutorialAppSchema.spPosts_Get";
+            var paramList = new Dictionary<string, object>();
 
-            return _dapper.LoadData<Post>(sql);
-        }
-
-        [HttpGet("PostSingle/{postId}")]
-        public Post GetPostSingle(int postId)
-        {
-            string sql = @"SELECT [PostId],
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated] 
-                FROM TutorialAppSchema.Posts
-                WHERE PostId = @postId";
-
-            return _dapper.LoadDataSingle<Post>(sql, new { PostId = postId });
-        }
-
-        [HttpGet("PostsByUser/{userId}")]
-        public IEnumerable<Post> GetPostsByUser(int userId)
-        {
-            string sql = @"SELECT [PostId],
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated] 
-                FROM TutorialAppSchema.Posts
-                WHERE UserId = @userId";
-
-            return _dapper.LoadData<Post>(sql, new { UserId = userId });
+            if (postId != 0)
+            {
+                sql += " @PostId = @PostId";
+                paramList["PostId"] = postId;
+            }
+            if (userId != 0)
+            {
+                if (paramList.Count > 0) sql += ", ";
+                sql += " @UserId = @UserId";
+                paramList["UserId"] = userId;
+            }
+            if (searchParam != "None")
+            {
+                if (paramList.Count > 0) sql += ", ";
+                sql += " @SearchValue = @SearchValue";
+                paramList["SearchValue"] = searchParam;
+            }
+            IEnumerable<Post> posts = _dapper.LoadData<Post>(sql, paramList);
+            return posts ?? Enumerable.Empty<Post>();
         }
 
         [HttpGet("MyPosts")]
@@ -71,19 +55,13 @@ namespace DotnetAPI.Controllers
             }
             int userId = int.Parse(userIdClaim);
 
-            string sql = @"SELECT [PostId],
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated] 
-                FROM TutorialAppSchema.Posts
-                WHERE UserId = @UserId";
+            string sql = @"EXEC TutorialAppSchema.spPosts_Get
+                    @UserId = @UserId";
 
             return _dapper.LoadData<Post>(sql, new { UserId = userId });
         }
-        [HttpPost("Post")]
-        public IActionResult AddPost(PostToAddDto postToAdd)
+        [HttpPut("UpsertPost")]
+        public IActionResult UpsertPost(Post postToUpsert)
         {
             var userIdClaim = User.FindFirst("userId")?.Value;
             if (string.IsNullOrEmpty(userIdClaim))
@@ -93,67 +71,22 @@ namespace DotnetAPI.Controllers
             }
             int userId = int.Parse(userIdClaim);
 
-            string sql = @"
-                INSERT INTO TutorialAppSchema.Posts(
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated]
-                ) 
-                VALUES(
-                    @UserId,
-                    @PostTitle,
-                    @PostContent,
-                    @PostCreated,
-                    @PostUpdated                    
-                )";
+            string sql = @"EXEC TutorialAppSchema.spPosts_Upsert
+                @UserId = @UserId
+                , @PostTitle = @PostTitle
+                , @PostContent = @PostContent
+                , @PostId = @PostId";
 
             var parameters = new
             {
                 UserId = userId,
-                PostTitle = postToAdd.PostTitle,
-                PostContent = postToAdd.PostContent,
-                PostCreated = DateTime.Now,
-                PostUpdated = DateTime.Now
+                PostTitle = postToUpsert.PostTitle,
+                PostContent = postToUpsert.PostContent,
+                PostId = postToUpsert.PostId
             };
 
             if (_dapper.ExecuteSql(sql, parameters)) return Ok();
-            throw new Exception("Failed to add post");
-
-        }
-
-        [HttpPut("Post")]
-        public IActionResult EditPost(PostToEditDto postToEdit)
-        {
-            var userIdClaim = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
-            {
-                return Unauthorized();
-
-            }
-            int userId = int.Parse(userIdClaim);
-
-            string sql = @"
-                UPDATE TutorialAppSchema.Posts
-                    SET [PostTitle] = @PostTitle,
-                        [PostContent] = @PostContent,
-                        [PostUpdated] = @PostUpdated
-                    WHERE PostId = @PostId
-                    AND UserId = @userId             
-                ";
-
-            var parameters = new
-            {
-                PostId = postToEdit.PostId,
-                UserId = userId,
-                PostTitle = postToEdit.PostTitle,
-                PostContent = postToEdit.PostContent,
-                PostUpdated = DateTime.Now
-            };
-
-            if (_dapper.ExecuteSql(sql, parameters)) return Ok();
-            return StatusCode(500, "Failed to edit pos.");
+            throw new Exception("Failed to upsert post");
 
         }
 
@@ -168,42 +101,12 @@ namespace DotnetAPI.Controllers
             }
             int userId = int.Parse(userIdClaim);
 
-            string sql = @"
-                DELETE FROM TutorialAppSchema.Posts
-                WHERE PostId = @postId
-                AND UserId = @userId";
+            string sql = @"EXEC TutorialAppSchema.spPost_Delete
+                @PostId = @PostId,
+                @UserId = @UserId";
 
             if (_dapper.ExecuteSql(sql, new { PostId = postId, UserId = userId })) return Ok();
             return StatusCode(500, "Failed to delete post.");
-        }
-
-        [HttpGet("PostsBySearch/{searchParam}")]
-        public IEnumerable<Post> PostsBySearch(string searchParam)
-        {
-            var userIdClaim = User.FindFirst("userId")?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
-            {
-                return Enumerable.Empty<Post>();
-            }
-            int userId = int.Parse(userIdClaim);
-
-            string sql = @"SELECT [PostId],
-                    [UserId],
-                    [PostTitle],
-                    [PostContent],
-                    [PostCreated],
-                    [PostUpdated] 
-                FROM TutorialAppSchema.Posts
-                    WHERE PostTitle LIKE @SearchPattern
-                        OR PostContent LIKE @SearchPattern";
-
-
-            var parameters = new
-            {
-                SearchPattern = $"%{searchParam}%"
-            };
-
-            return _dapper.LoadData<Post>(sql, parameters);
         }
 
     }
