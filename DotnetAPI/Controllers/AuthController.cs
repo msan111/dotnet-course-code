@@ -3,9 +3,12 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using AutoMapper;
+using Dapper;
 using DotnetAPI.Data;
 using DotnetAPI.Dtos;
 using DotnetAPI.Helpers;
+using DotnetAPI.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -22,10 +25,19 @@ namespace DotnetAPI.Controllers
     {
         private readonly DataContextDapper _dapper;
         private readonly AuthHelper _authHelper;
+
+        private readonly ReusableSql _reusableSql;
+        private readonly IMapper _mapper;
         public AuthController(IConfiguration config)
         {
             _dapper = new DataContextDapper(config);
             _authHelper = new AuthHelper(config);
+            _reusableSql = new ReusableSql(config);
+            _mapper = new Mapper(new MapperConfiguration(cfg => 
+            {
+                cfg.CreateMap<UserForRegistrationDto, UserComplete>();
+
+            }));
         }
 
         [AllowAnonymous]
@@ -35,7 +47,7 @@ namespace DotnetAPI.Controllers
             if (userForRegistration.Password == userForRegistration.PasswordConfirm)
             {
                 string sqlCheckUserExists = "SELECT Email FROM TutorialAppSchema.Auth WHERE Email = @Email";
-                IEnumerable<string> existingUsers = _dapper.LoadData<string>(sqlCheckUserExists, new { Email = userForRegistration.Email });
+                IEnumerable<string> existingUsers = _dapper.LoadDataWithParameters<string>(sqlCheckUserExists, new { Email = userForRegistration.Email });
                 if (existingUsers.Count() == 0)
                 {
                     
@@ -47,30 +59,10 @@ namespace DotnetAPI.Controllers
 
                     if (_authHelper.SetPassword(userForSetPassword))
                     {
-                        string sqlAddUser = @"EXEC TutorialAppSchema.spUser_Upsert
-                            @FirstName = @FirstName,
-                            @LastName = @LastName,
-                            @Email = @Email,
-                            @Gender = @Gender,
-                            @JobTitle = @JobTitle,
-                            @Department = @Department,
-                            @Salary = @Salary,
-                            @Active = @Active";
+                        UserComplete userComplete = _mapper.Map<UserComplete>(userForRegistration);
+                        userComplete.Active = true;
 
-                        var parametersUser = new
-                        {
-                            userForRegistration.FirstName,
-                            userForRegistration.LastName,
-                            userForRegistration.Email,
-                            userForRegistration.Gender,
-                            userForRegistration.JobTitle,
-                            userForRegistration.Department,
-                            userForRegistration.Salary,
-                            Active = 1,
-
-                        };
-                       
-                        if (_dapper.ExecuteSql(sqlAddUser, parametersUser))
+                        if (_reusableSql.UpsertUser(userComplete))
                         {
                             return Ok("User created");
                         }
@@ -112,11 +104,11 @@ namespace DotnetAPI.Controllers
             string sqlForHashAndSalt = @"EXEC TutorialAppSchema.spLoginConfirmation_Get
                 @Email = @Email";
 
+            DynamicParameters parameter = new DynamicParameters();
+            parameter.Add("Email", userForLogin.Email, DbType.String);
+
             UserForLoginConfirmationDto userForLoginConfirmation = _dapper.
-                LoadDataSingle<UserForLoginConfirmationDto>(sqlForHashAndSalt, new
-                {
-                    Email = userForLogin.Email
-                });
+                LoadDataSingle<UserForLoginConfirmationDto>(sqlForHashAndSalt,parameter);
 
             byte[] passwordHash = _authHelper.GetPasswordHash(userForLogin.Password, userForLoginConfirmation.PasswordSalt);
 
@@ -134,11 +126,11 @@ namespace DotnetAPI.Controllers
                 WHERE Email = @Email
             ";
 
-            int userId = _dapper.LoadDataSingle<int>(userIdSql, new
-            {
-                Email = userForLogin.Email
-            });
+            DynamicParameters secondParameter = new DynamicParameters();
+            secondParameter.Add("Email", userForLogin.Email, DbType.String);
 
+
+            int userId = _dapper.LoadDataSingle<int>(userIdSql, secondParameter);
 
             return Ok(new Dictionary<string, string>
             {

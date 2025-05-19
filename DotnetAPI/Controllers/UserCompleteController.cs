@@ -1,40 +1,52 @@
+using System.Data;
+using Dapper;
 using DotnetAPI.Data;
 using DotnetAPI.Dtos;
+using DotnetAPI.Helpers;
 using DotnetAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DotnetAPI.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("[controller]")]
 public class UserCompleteController : ControllerBase
 {
-    DataContextDapper _dapper;
+    private readonly DataContextDapper _dapper;
+    private readonly ReusableSql _reusableSql;
     public UserCompleteController(IConfiguration config)
     {
         _dapper = new DataContextDapper(config);
+        _reusableSql = new ReusableSql(config);
     }
 
     [HttpGet("GetUsers/{userId}/{isActive}")]
     public IEnumerable<UserComplete> GetUsers(int userId, bool isActive)
     {
         string sql = @"EXEC TutorialAppSchema.spUsers_Get";
-        var paramList = new Dictionary<string, object>();
+
+        DynamicParameters sqlParameters = new DynamicParameters();
+
+        bool hasPreviousParam = false;
 
         if (userId != 0)
         {
-            sql += " @UserId = @userId";
-            paramList["UserId"] = userId;
+            sql += " @UserId = @UserIdParameter";
+            sqlParameters.Add("@UserIdParameter", userId, DbType.Int32);
+            hasPreviousParam = true;
         }
 
         if (isActive)
         {
-            if (paramList.Count > 0) sql += ", ";
-            sql += " @Active = @Active";
-            paramList["Active"] = true;
+            if (hasPreviousParam) sql += ", ";
+            sql += " @Active = @ActiveParameter";
+            sqlParameters.Add("@ActiveParameter", isActive, DbType.Boolean);
+
         }
 
-        IEnumerable<UserComplete> users = _dapper.LoadData<UserComplete>(sql, paramList);
+        IEnumerable<UserComplete> users = _dapper.LoadDataWithParameters<UserComplete>(sql, sqlParameters);
         return users;
 
     }
@@ -42,32 +54,7 @@ public class UserCompleteController : ControllerBase
     [HttpPut("UpsertUser")]
     public IActionResult UpsertUser(UserComplete user)
     {
-
-        string sql = @"
-        EXEC TutorialAppSchema.spUser_Upsert
-                @FirstName = @FirstName,
-                @LastName = @LastName,
-                @Email = @Email,
-                @Gender = @Gender,
-                @JobTitle = @JobTitle,
-                @Department = @Department,
-                @Salary = @Salary,
-                @Active = @Active,
-                @UserId = @UserId";
-
-        var parameters = new
-        {
-            user.FirstName,
-            user.LastName,
-            user.Email,
-            user.Gender,
-            user.JobTitle,
-            user.Department,
-            user.Salary,
-            user.Active,
-            user.UserId
-        };
-        if (_dapper.ExecuteSql(sql, parameters)) return Ok();
+        if (_reusableSql.UpsertUser(user)) return Ok();
         throw new Exception("Failed to update user");
 
     }
@@ -79,8 +66,9 @@ public class UserCompleteController : ControllerBase
             EXEC TutorialAppSchema.spUser_Delete
             @UserId = @UserId";
 
-        var parameters = new { UserId = userId };
-        if (_dapper.ExecuteSql(sql, parameters)) return Ok();
+        var parameters = new DynamicParameters();
+        parameters.Add("UserId", userId, DbType.Int32);
+        if (_dapper.ExecuteSqlWithParameters(sql, parameters)) return Ok();
         throw new Exception("Failed to delete user");
 
     }

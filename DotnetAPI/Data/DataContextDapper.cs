@@ -14,7 +14,7 @@ namespace DotnetAPI.Data
             _config = config;
         }
 
-        public IEnumerable<T> LoadData<T>(string sql, object? parameters = null )
+        public IEnumerable<T> LoadDataWithParameters<T>(string sql, object parameters )
         {
             IDbConnection dbConnection = new SqlConnection(_config.GetConnectionString("DefaultConnection"));
             return dbConnection.Query<T>(sql, parameters);
@@ -26,19 +26,6 @@ namespace DotnetAPI.Data
             return dbConnection.QuerySingle<T>(sql, parameters);
         }
 
-        public bool ExecuteSql(string sql,object parameters)
-        {
-            IDbConnection dbConnection = new SqlConnection(_config.GetConnectionString("DefaultConnection"));
-            return dbConnection.Execute(sql,parameters) > 0;
-        }
-
-           public int ExecuteSqlWithRowCount(string sql)
-        {
-            IDbConnection dbConnection = new SqlConnection(_config.GetConnectionString("DefaultConnection"));
-            return dbConnection.Execute(sql);
-        }
-
-
            public bool ExecuteSqlWithParameters(string sql, DynamicParameters parameters)
         {   
             IDbConnection dbConnection = new SqlConnection(_config.GetConnectionString("DefaultConnection"));
@@ -46,10 +33,5 @@ namespace DotnetAPI.Data
             
         }
 
-
-        internal IEnumerable<T> LoadData<T>(T sqlCheckUserExists, object value)
-        {
-            throw new NotImplementedException();
-        }
     }
 }
